@@ -1,7 +1,270 @@
 <!DOCTYPE html>
-<html>
-<head><title>EmosiKu</title></head>
-<body>
-  <h1>GitHub Pages berjalan!</h1>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EmosiKU.id</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Icons (Lucide) -->
+  <script src="https://unpkg.com/lucide-react@latest/dist/lucide-react.min.js"></script>
+
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
+
+</head>
+<body class="bg-black">
+  <div id="root"></div>
+
+  <script type="text/babel">
+
+    const { useState, useRef, useEffect } = React;
+    const { Camera, Upload, Brain, Sparkles, X } = lucide;
+
+    const EmosiKU = () => {
+      const [image, setImage] = useState(null);
+      const [prediction, setPrediction] = useState(null);
+      const [model, setModel] = useState(null);
+      const [isLoading, setIsLoading] = useState(false);
+      const [modelLoaded, setModelLoaded] = useState(false);
+      const fileInputRef = useRef(null);
+      const canvasRef = useRef(null);
+
+      const emotions = ["Angry", "Fear", "Happy", "Sad", "Surprise"];
+
+      // Load TensorFlow.js Model
+      const loadModel = async () => {
+        try {
+          setIsLoading(true);
+
+          // URL Model Kamu (folder "model")
+          const modelUrl =
+            "https://cdn.jsdelivr.net/gh/erenmenn/EmosiKu-model@main/model/model.json";
+
+          console.log("Loading model from:", modelUrl);
+
+          const loadedModel = await tf.loadLayersModel(modelUrl);
+          setModel(loadedModel);
+          setModelLoaded(true);
+          setIsLoading(false);
+
+          console.log("Model loaded:", loadedModel);
+        } catch (error) {
+          console.error("Error loading model:", error);
+          alert("Gagal memuat model: " + error.message);
+          setIsLoading(false);
+        }
+      };
+
+      useEffect(() => {
+        loadModel();
+      }, []);
+
+      const convertToGrayscale = (img) => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+
+        const size = 48;
+        canvas.width = size;
+        canvas.height = size;
+
+        ctx.drawImage(img, 0, 0, size, size);
+
+        const imgData = ctx.getImageData(0, 0, size, size);
+        const data = imgData.data;
+
+        // convert to grayscale
+        for (let i = 0; i < data.length; i += 4) {
+          const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          data[i] = avg;
+          data[i + 1] = avg;
+          data[i + 2] = avg;
+        }
+
+        ctx.putImageData(imgData, 0, 0);
+        return canvas;
+      };
+
+      const handleImageUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (ev) => setImage(ev.target.result);
+        reader.readAsDataURL(file);
+        setPrediction(null);
+      };
+
+      const predictEmotion = async () => {
+        if (!image) {
+          alert("Upload gambar dulu yuk!");
+          return;
+        }
+
+        if (!model) {
+          alert("Model belum siap!");
+          return;
+        }
+
+        setIsLoading(true);
+
+        const img = new Image();
+        img.src = image;
+
+        img.onload = async () => {
+          const grayCanvas = convertToGrayscale(img);
+
+          const tensor = tf.browser
+            .fromPixels(grayCanvas, 1)
+            .toFloat()
+            .div(255)
+            .expandDims(0);
+
+          const raw = model.predict(tensor);
+          const probs = await raw.data();
+
+          tensor.dispose();
+          raw.dispose();
+
+          const results = emotions
+            .map((emotion, i) => ({
+              emotion,
+              confidence: probs[i] * 100,
+            }))
+            .sort((a, b) => b.confidence - a.confidence);
+
+          setPrediction(results);
+          setIsLoading(false);
+        };
+      };
+
+      const resetAll = () => {
+        setImage(null);
+        setPrediction(null);
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black text-white p-6">
+          <canvas ref={canvasRef} className="hidden" />
+
+          {/* HEADER */}
+          <div className="text-center mb-10">
+            <div className="flex justify-center items-center gap-3">
+              <Brain className="w-10 h-10 text-yellow-500" />
+              <h1 className="text-5xl font-bold text-yellow-500">
+                EmosiKU.id
+              </h1>
+              <Sparkles className="w-10 h-10 text-yellow-500" />
+            </div>
+
+            {modelLoaded ? (
+              <div className="mt-3 text-green-400">
+                ✓ Model berhasil dimuat
+              </div>
+            ) : (
+              <div className="mt-3 text-yellow-400 animate-pulse">
+                Memuat model...
+              </div>
+            )}
+          </div>
+
+          {/* UPLOAD */}
+          <div className="max-w-xl mx-auto bg-gray-800 p-6 rounded-xl border border-yellow-500/20">
+            <h2 className="text-2xl mb-4 font-bold flex items-center gap-2 text-yellow-500">
+              <Upload className="w-6 h-6" /> Upload Wajah
+            </h2>
+
+            {!image ? (
+              <div
+                onClick={() => fileInputRef.current.click()}
+                className="border-2 border-dashed p-12 rounded-xl cursor-pointer text-center hover:border-yellow-300"
+              >
+                <Camera className="w-20 h-20 text-yellow-500 mx-auto mb-4" />
+                <p>Klik untuk upload foto</p>
+              </div>
+            ) : (
+              <>
+                <img
+                  src={image}
+                  className="rounded-xl mb-4 w-full h-80 object-cover"
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    onClick={predictEmotion}
+                    className="p-4 bg-yellow-500 text-black rounded-xl font-bold"
+                  >
+                    {isLoading ? "Menganalisis..." : "Deteksi Emosi"}
+                  </button>
+
+                  <button
+                    onClick={resetAll}
+                    className="p-4 bg-red-500/30 text-red-400 rounded-xl"
+                  >
+                    <X className="w-5 h-5 inline" /> Reset
+                  </button>
+                </div>
+              </>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageUpload}
+            />
+          </div>
+
+          {/* RESULTS */}
+          {prediction && (
+            <div className="max-w-xl mx-auto mt-8 bg-gray-800 p-6 rounded-xl border border-yellow-500/20">
+              <h3 className="text-3xl font-bold text-yellow-500 mb-4">
+                Hasil Deteksi
+              </h3>
+
+              <div className="p-4 rounded-lg bg-yellow-500/20 mb-4 text-center">
+                <div className="text-4xl text-yellow-400 font-bold">
+                  {prediction[0].emotion}
+                </div>
+                <div className="text-3xl text-yellow-500">
+                  {prediction[0].confidence.toFixed(1)}%
+                </div>
+              </div>
+
+              {prediction.map((p, i) => (
+                <div
+                  key={i}
+                  className="mb-3 p-3 bg-black/30 rounded-lg border border-yellow-500/10"
+                >
+                  <div className="flex justify-between mb-1">
+                    <span>{p.emotion}</span>
+                    <span>{p.confidence.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2 bg-gray-700 rounded-full">
+                    <div
+                      className="h-full bg-yellow-500 rounded-full"
+                      style={{ width: p.confidence + "%" }}
+                    ></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<EmosiKU />);
+  </script>
 </body>
 </html>
